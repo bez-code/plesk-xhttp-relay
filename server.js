@@ -132,6 +132,58 @@ const server = http.createServer((req, res) => {
     debugOrigin(res);
     return;
   }
+  if (req.url === "/debug-targets") {
+  const targets = [
+    "http://213.142.148.52/health",
+    "http://example.com/",
+    "http://github.com/",
+    "https://github.com/",
+    "https://www.npmjs.com/",
+    "https://react.dev/",
+    "https://nextjs.org/"
+  ];
+
+  const results = [];
+
+  async function testTarget(url) {
+    return new Promise((resolve) => {
+      const lib = url.startsWith("https:") ? https : http;
+      const started = Date.now();
+
+      const r = lib.request(url, { method: "GET", timeout: 10000 }, (rr) => {
+        rr.resume();
+        rr.on("end", () => {
+          resolve({
+            url,
+            status: rr.statusCode,
+            ms: Date.now() - started
+          });
+        });
+      });
+
+      r.on("timeout", () => {
+        r.destroy(new Error("timeout"));
+      });
+
+      r.on("error", (err) => {
+        resolve({
+          url,
+          error: err.code || "NO_CODE",
+          message: err.message,
+          ms: Date.now() - started
+        });
+      });
+
+      r.end();
+    });
+  }
+
+  Promise.all(targets.map(testTarget)).then((items) => {
+    sendText(res, 200, JSON.stringify(items, null, 2));
+  });
+
+  return;
+}
 
   if (!req.url.startsWith("/api/v1/score")) {
     sendText(res, 404, "Not Found");
