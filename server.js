@@ -137,3 +137,33 @@ server.listen(PORT, () => {
   console.log(`XHTTP relay listening on port ${PORT}`);
   console.log(`TARGET_BASE=${TARGET_BASE}`);
 });
+if (req.url === "/debug-origin") {
+  const testUrl = "http://213.142.148.52:12000/api/v1/score";
+
+  const testReq = http.request(testUrl, { method: "GET", timeout: 15000 }, (testRes) => {
+    let body = "";
+    testRes.on("data", chunk => body += chunk.toString());
+    testRes.on("end", () => {
+      sendText(
+        res,
+        200,
+        `origin status=${testRes.statusCode}\nheaders=${JSON.stringify(testRes.headers)}\nbody=${body}`
+      );
+    });
+  });
+
+  testReq.on("timeout", () => {
+    testReq.destroy(new Error("origin timeout"));
+  });
+
+  testReq.on("error", (err) => {
+    sendText(
+      res,
+      502,
+      `origin error\ncode=${err.code || "NO_CODE"}\nmessage=${err.message}`
+    );
+  });
+
+  testReq.end();
+  return;
+}
