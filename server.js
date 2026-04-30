@@ -1,7 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 
-const TARGET_BASE = "http://213.142.148.52:12000";
+const TARGET_BASE = "http://213.142.148.52";
 const PORT = process.env.PORT || 3000;
 
 const STRIP_REQ_HEADERS = new Set([
@@ -75,8 +75,7 @@ function sendText(res, status, text) {
 }
 
 function debugOrigin(res) {
-  const testUrl = "http://213.142.148.52:12000/api/v1/score";
-
+const testUrl = "http://213.142.148.52/api/v1/score";
   const testReq = http.request(
     testUrl,
     {
