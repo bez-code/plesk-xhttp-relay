@@ -46,7 +46,9 @@ function copyRequestHeaders(headers, req) {
     req.socket.remoteAddress ||
     "";
 
-  if (clientIp) out["x-forwarded-for"] = clientIp;
+  if (clientIp) {
+    out["x-forwarded-for"] = clientIp;
+  }
 
   return out;
 }
@@ -72,9 +74,63 @@ function sendText(res, status, text) {
   res.end(text);
 }
 
+function debugOrigin(res) {
+  const testUrl = "http://213.142.148.52:12000/api/v1/score";
+
+  const testReq = http.request(
+    testUrl,
+    {
+      method: "GET",
+      timeout: 15000
+    },
+    (testRes) => {
+      let body = "";
+
+      testRes.on("data", (chunk) => {
+        body += chunk.toString();
+      });
+
+      testRes.on("end", () => {
+        sendText(
+          res,
+          200,
+          [
+            `origin status=${testRes.statusCode}`,
+            `headers=${JSON.stringify(testRes.headers)}`,
+            `body=${body}`
+          ].join("\n")
+        );
+      });
+    }
+  );
+
+  testReq.on("timeout", () => {
+    testReq.destroy(new Error("origin timeout"));
+  });
+
+  testReq.on("error", (err) => {
+    sendText(
+      res,
+      502,
+      [
+        "origin error",
+        `code=${err.code || "NO_CODE"}`,
+        `message=${err.message}`
+      ].join("\n")
+    );
+  });
+
+  testReq.end();
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
     sendText(res, 200, "health ok");
+    return;
+  }
+
+  if (req.url === "/debug-origin") {
+    debugOrigin(res);
     return;
   }
 
@@ -84,6 +140,7 @@ const server = http.createServer((req, res) => {
   }
 
   let target;
+
   try {
     target = new URL(TARGET_BASE + req.url);
   } catch {
@@ -108,6 +165,7 @@ const server = http.createServer((req, res) => {
         upstreamRes.statusCode || 502,
         copyResponseHeaders(upstreamRes.headers)
       );
+
       upstreamRes.pipe(res);
     }
   );
@@ -116,15 +174,28 @@ const server = http.createServer((req, res) => {
     console.error("relay error:", err);
 
     if (!res.headersSent) {
-      sendText(res, 502, "Bad Gateway: Tunnel Failed");
+      sendText(
+        res,
+        502,
+        [
+          "Bad Gateway: Tunnel Failed",
+          `code=${err.code || "NO_CODE"}`,
+          `message=${err.message}`
+        ].join("\n")
+      );
       return;
     }
 
     res.destroy(err);
   });
 
-  req.on("aborted", () => upstreamReq.destroy());
-  res.on("close", () => upstreamReq.destroy());
+  req.on("aborted", () => {
+    upstreamReq.destroy();
+  });
+
+  res.on("close", () => {
+    upstreamReq.destroy();
+  });
 
   req.pipe(upstreamReq);
 });
@@ -137,33 +208,3 @@ server.listen(PORT, () => {
   console.log(`XHTTP relay listening on port ${PORT}`);
   console.log(`TARGET_BASE=${TARGET_BASE}`);
 });
-if (req.url === "/debug-origin") {
-  const testUrl = "http://213.142.148.52:12000/api/v1/score";
-
-  const testReq = http.request(testUrl, { method: "GET", timeout: 15000 }, (testRes) => {
-    let body = "";
-    testRes.on("data", chunk => body += chunk.toString());
-    testRes.on("end", () => {
-      sendText(
-        res,
-        200,
-        `origin status=${testRes.statusCode}\nheaders=${JSON.stringify(testRes.headers)}\nbody=${body}`
-      );
-    });
-  });
-
-  testReq.on("timeout", () => {
-    testReq.destroy(new Error("origin timeout"));
-  });
-
-  testReq.on("error", (err) => {
-    sendText(
-      res,
-      502,
-      `origin error\ncode=${err.code || "NO_CODE"}\nmessage=${err.message}`
-    );
-  });
-
-  testReq.end();
-  return;
-}
